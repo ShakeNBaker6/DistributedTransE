@@ -74,14 +74,14 @@ def demo_basic(rank, world_size):
     cleanup()
 
 
-def run_demo(demo_fn, world_size):
-    mp.spawn(demo_fn,
+def run(fn, world_size):
+    mp.spawn(fn,
              args=(world_size,),
              nprocs=world_size,
              join=True)
 
 
-def demo_checkpoint(rank, world_size):
+def run_TransE(rank, world_size):
     print(f"Running DDP checkpoint example on rank {rank}.")
     setup(rank, world_size)
 
@@ -243,6 +243,4 @@ if __name__ == "__main__":
     if n_gpus < 8:
         print(f"Requires at least 8 GPUs to run, but got {n_gpus}.")
     else:
-        run_demo(demo_basic, 8)
-        run_demo(demo_checkpoint, 8)
-        run_demo(demo_model_parallel, 4)
+        run(run_TransE, 8)
