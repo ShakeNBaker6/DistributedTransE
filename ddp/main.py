@@ -9,6 +9,7 @@ import torch.distributed as dist
 import torch.nn as nn
 import torch.optim as optim
 from typing import Tuple
+from absl import app
 from absl import flags
 from torch.utils import data as torch_data
 from torch.utils import tensorboard
@@ -243,10 +244,12 @@ def demo_model_parallel(rank, world_size):
 
     cleanup()
 
-
-if __name__ == "__main__":
+def main(_):
     n_gpus = torch.cuda.device_count()
     if n_gpus < 8:
         print(f"Requires at least 8 GPUs to run, but got {n_gpus}.")
     else:
         run(run_TransE, 8)
+
+if __name__ == '__main__':
+    app.run(main)
