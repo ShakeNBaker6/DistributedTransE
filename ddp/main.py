@@ -11,6 +11,7 @@ import torch.optim as optim
 from typing import Tuple
 from absl import flags
 from torch.utils import data as torch_data
+from torch.utils import tensorboard
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 import model as model_definition
