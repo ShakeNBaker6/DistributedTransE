@@ -4,12 +4,13 @@ import storage
 import data
 import torch
 import metric
-from typing import Tuple
-from absl import flags
-import torch.distributed as dist
 import torch.multiprocessing as mp
+import torch.distributed as dist
 import torch.nn as nn
 import torch.optim as optim
+from typing import Tuple
+from absl import flags
+from torch.utils import data as torch_data
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 import model as model_definition
