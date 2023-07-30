@@ -92,11 +92,11 @@ def run_TransE(rank, world_size):
     print(f"Running DDP checkpoint example on rank {rank}.")
     setup(rank, world_size)
 
-    torch.random.manual_seed(FLAGS.seed)
+    torch.random.manual_seed(1234)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    path = FLAGS.dataset_path
+    path = "./FB15KDataset""
     train_path = os.path.join(path, "train.txt")
     validation_path = os.path.join(path, "valid.txt")
     test_path = os.path.join(path, "test.txt")
@@ -109,7 +109,7 @@ def run_TransE(rank, world_size):
     norm = 1
     learning_rate = .01
     epochs = 2000
-    device = torch.device('cuda') if FLAGS.use_gpu else torch.device('cpu')
+    device = torch.device('cuda')
 
     train_set = data.FB15KDataset(train_path, entity2id, relation2id)
     train_generator = torch_data.DataLoader(train_set, batch_size=batch_size)
