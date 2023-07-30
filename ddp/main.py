@@ -141,6 +141,7 @@ def run_TransE(rank, world_size):
 
     ddp_model.train()
 
+    summary_writer = tensorboard.SummaryWriter(log_dir="./runs")
     for local_heads, local_relations, local_tails in train_generator:
         local_heads, local_relations, local_tails = (local_heads.to(device), local_relations.to(device),
                                                      local_tails.to(device))
