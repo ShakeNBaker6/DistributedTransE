@@ -139,51 +139,51 @@ def run_TransE(rank, world_size):
     ddp_model.load_state_dict(
         torch.load(CHECKPOINT_PATH, map_location=map_location))
 
-     model.train()
+    ddp_model.train()
 
-        for local_heads, local_relations, local_tails in train_generator:
-            local_heads, local_relations, local_tails = (local_heads.to(device), local_relations.to(device),
-                                                         local_tails.to(device))
+    for local_heads, local_relations, local_tails in train_generator:
+        local_heads, local_relations, local_tails = (local_heads.to(device), local_relations.to(device),
+                                                     local_tails.to(device))
 
-            positive_triples = torch.stack((local_heads, local_relations, local_tails), dim=1)
+        positive_triples = torch.stack((local_heads, local_relations, local_tails), dim=1)
 
-            # Preparing negatives.
-            # Generate binary tensor to replace either head or tail. 1 means replace head, 0 means replace tail.
-            head_or_tail = torch.randint(high=2, size=local_heads.size(), device=device)
-            random_entities = torch.randint(high=len(entity2id), size=local_heads.size(), device=device)
-            broken_heads = torch.where(head_or_tail == 1, random_entities, local_heads)
-            broken_tails = torch.where(head_or_tail == 0, random_entities, local_tails)
-            negative_triples = torch.stack((broken_heads, local_relations, broken_tails), dim=1)
+        # Preparing negatives.
+        # Generate binary tensor to replace either head or tail. 1 means replace head, 0 means replace tail.
+        head_or_tail = torch.randint(high=2, size=local_heads.size(), device=device)
+        random_entities = torch.randint(high=len(entity2id), size=local_heads.size(), device=device)
+        broken_heads = torch.where(head_or_tail == 1, random_entities, local_heads)
+        broken_tails = torch.where(head_or_tail == 0, random_entities, local_tails)
+        negative_triples = torch.stack((broken_heads, local_relations, broken_tails), dim=1)
 
-            optimizer.zero_grad()
+        optimizer.zero_grad()
 
-            loss, pd, nd = model(positive_triples, negative_triples)
-            loss.mean().backward()
+        loss, pd, nd = model(positive_triples, negative_triples)
+        loss.mean().backward()
 
-            summary_writer.add_scalar('Loss/train', loss.mean().data.cpu().numpy(), global_step=step)
-            summary_writer.add_scalar('Distance/positive', pd.sum().data.cpu().numpy(), global_step=step)
-            summary_writer.add_scalar('Distance/negative', nd.sum().data.cpu().numpy(), global_step=step)
+        summary_writer.add_scalar('Loss/train', loss.mean().data.cpu().numpy(), global_step=step)
+        summary_writer.add_scalar('Distance/positive', pd.sum().data.cpu().numpy(), global_step=step)
+        summary_writer.add_scalar('Distance/negative', nd.sum().data.cpu().numpy(), global_step=step)
 
-            loss = loss.data.cpu()
-            loss_impacting_samples_count += loss.nonzero().size()[0]
-            samples_count += loss.size()[0]
+        loss = loss.data.cpu()
+        loss_impacting_samples_count += loss.nonzero().size()[0]
+        samples_count += loss.size()[0]
 
-            optimizer.step()
-            step += 1
+        optimizer.step()
+        step += 1
 
-        summary_writer.add_scalar('Metrics/loss_impacting_samples', loss_impacting_samples_count / samples_count * 100,
-                                  global_step=epoch_id)
+    summary_writer.add_scalar('Metrics/loss_impacting_samples', loss_impacting_samples_count / samples_count * 100,
+                              global_step=epoch_id)
 
-        if epoch_id % FLAGS.validation_freq == 0:
-            model.eval()
-            _, _, hits_at_10, _ = test(model=model, data_generator=validation_generator,
-                                       entities_count=len(entity2id),
-                                       device=device, summary_writer=summary_writer,
-                                       epoch_id=epoch_id, metric_suffix="val")
-            score = hits_at_10
-            if score > best_score:
-                best_score = score
-                storage.save_checkpoint(model, optimizer, epoch_id, step, best_score)
+    if epoch_id % FLAGS.validation_freq == 0:
+        ddp_model.eval()
+        _, _, hits_at_10, _ = test(model=ddp_model, data_generator=validation_generator,
+                                   entities_count=len(entity2id),
+                                   device=device, summary_writer=summary_writer,
+                                   epoch_id=epoch_id, metric_suffix="val")
+        score = hits_at_10
+        if score > best_score:
+            best_score = score
+            storage.save_checkpoint(ddp_model, optimizer, epoch_id, step, best_score)
 
     # Testing the best checkpoint on test dataset
     storage.load_checkpoint("checkpoint.tar", model, optimizer)
