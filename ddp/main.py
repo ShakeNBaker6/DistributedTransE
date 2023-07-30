@@ -96,7 +96,7 @@ def run_TransE(rank, world_size):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    path = "./FB15KDataset""
+    path = "./FB15Kdata"
     train_path = os.path.join(path, "train.txt")
     validation_path = os.path.join(path, "valid.txt")
     test_path = os.path.join(path, "test.txt")
@@ -141,7 +141,7 @@ def run_TransE(rank, world_size):
         torch.load(CHECKPOINT_PATH, map_location=map_location))
 
     optimizer.zero_grad()
-    outputs = ddp_model(torch.randn(20, 10))
+    outputs = ddp_model(torch.randn(20, 10), hidden)
     labels = torch.randn(20, 5).to(rank)
     loss_fn = nn.MSELoss()
     loss_fn(outputs, labels).backward()
