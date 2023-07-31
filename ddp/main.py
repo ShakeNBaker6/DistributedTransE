@@ -140,7 +140,10 @@ def run_TransE(rank, world_size):
         torch.load(CHECKPOINT_PATH, map_location=map_location))
 
     ddp_model.train()
-
+    
+    loss_impacting_samples_count = 0
+    samples_count = 0
+    step = 0
     summary_writer = tensorboard.SummaryWriter(log_dir="./runs")
     for local_heads, local_relations, local_tails in train_generator:
         local_heads, local_relations, local_tails = (local_heads.to(device), local_relations.to(device),
@@ -188,7 +191,7 @@ def run_TransE(rank, world_size):
 
     # Testing the best checkpoint on test dataset
     storage.load_checkpoint("checkpoint.tar", model, optimizer)
-    best_model = model.to(device)
+    best_model = ddp_model.to(device)
     best_model.eval()
     scores = test(model=best_model, data_generator=test_generator, entities_count=len(entity2id), device=device,
                   summary_writer=summary_writer, epoch_id=1, metric_suffix="test")
