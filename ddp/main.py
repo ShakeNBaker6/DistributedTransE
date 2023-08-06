@@ -128,6 +128,7 @@ def run_TransE(rank, world_size):
     loss_impacting_samples_count = 0
     samples_count = 0
     step = 0
+    start_epoch_id = 1
     summary_writer = tensorboard.SummaryWriter(log_dir="./runs")
 
     for epoch_id in range(start_epoch_id, epochs + 1):
