@@ -10,27 +10,11 @@ import torch.nn as nn
 import torch.optim as optim
 from typing import Tuple
 from absl import app
-from absl import flags
 from torch.utils import data as torch_data
 from torch.utils import tensorboard
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 import model as model_definition
-
-FLAGS = flags.FLAGS
-flags.DEFINE_float("lr", default=0.01, help="Learning rate value.")
-flags.DEFINE_integer("seed", default=1234, help="Seed value.")
-flags.DEFINE_integer("batch_size", default=128, help="Maximum batch size.")
-flags.DEFINE_integer("validation_batch_size", default=64, help="Maximum batch size during model validation.")
-flags.DEFINE_integer("vector_length", default=50, help="Length of entity/relation vector.")
-flags.DEFINE_float("margin", default=1.0, help="Margin value in margin-based ranking loss.")
-flags.DEFINE_integer("norm", default=1, help="Norm used for calculating dissimilarity metric (usually 1 or 2).")
-flags.DEFINE_integer("epochs", default=2000, help="Number of training epochs.")
-flags.DEFINE_string("dataset_path", default="./FB15KDataset", help="Path to dataset.")
-flags.DEFINE_bool("use_gpu", default=True, help="Flag enabling gpu usage.")
-flags.DEFINE_integer("validation_freq", default=10, help="Validate model every X epochs.")
-flags.DEFINE_string("checkpoint_path", default="", help="Path to model checkpoint (by default train from scratch).")
-flags.DEFINE_string("tensorboard_log_dir", default="./runs", help="Path for tensorboard log directory.")
 
 HITS_AT_1_SCORE = float
 HITS_AT_3_SCORE = float
@@ -145,60 +129,66 @@ def run_TransE(rank, world_size):
     samples_count = 0
     step = 0
     summary_writer = tensorboard.SummaryWriter(log_dir="./runs")
-    for local_heads, local_relations, local_tails in train_generator:
-        local_heads, local_relations, local_tails = (local_heads.to(device), local_relations.to(device),
-                                                     local_tails.to(device))
 
-        positive_triples = torch.stack((local_heads, local_relations, local_tails), dim=1)
+    for epoch_id in range(start_epoch_id, epochs + 1):
+        print("Starting epoch: ", epoch_id)
+        loss_impacting_samples_count = 0
+        samples_count = 0
+        model.train()
+        for local_heads, local_relations, local_tails in train_generator:
+            local_heads, local_relations, local_tails = (local_heads.to(device), local_relations.to(device),
+                                                         local_tails.to(device))
 
-        # Preparing negatives.
-        # Generate binary tensor to replace either head or tail. 1 means replace head, 0 means replace tail.
-        head_or_tail = torch.randint(high=2, size=local_heads.size(), device=device)
-        random_entities = torch.randint(high=len(entity2id), size=local_heads.size(), device=device)
-        broken_heads = torch.where(head_or_tail == 1, random_entities, local_heads)
-        broken_tails = torch.where(head_or_tail == 0, random_entities, local_tails)
-        negative_triples = torch.stack((broken_heads, local_relations, broken_tails), dim=1)
+            positive_triples = torch.stack((local_heads, local_relations, local_tails), dim=1)
 
-        optimizer.zero_grad()
+            # Preparing negatives.
+            # Generate binary tensor to replace either head or tail. 1 means replace head, 0 means replace tail.
+            head_or_tail = torch.randint(high=2, size=local_heads.size(), device=device)
+            random_entities = torch.randint(high=len(entity2id), size=local_heads.size(), device=device)
+            broken_heads = torch.where(head_or_tail == 1, random_entities, local_heads)
+            broken_tails = torch.where(head_or_tail == 0, random_entities, local_tails)
+            negative_triples = torch.stack((broken_heads, local_relations, broken_tails), dim=1)
 
-        loss, pd, nd = model(positive_triples, negative_triples)
-        loss.mean().backward()
+            optimizer.zero_grad()
 
-        summary_writer.add_scalar('Loss/train', loss.mean().data.cpu().numpy(), global_step=step)
-        summary_writer.add_scalar('Distance/positive', pd.sum().data.cpu().numpy(), global_step=step)
-        summary_writer.add_scalar('Distance/negative', nd.sum().data.cpu().numpy(), global_step=step)
+            loss, pd, nd = model(positive_triples, negative_triples)
+            loss.mean().backward()
 
-        loss = loss.data.cpu()
-        loss_impacting_samples_count += loss.nonzero().size()[0]
-        samples_count += loss.size()[0]
+            summary_writer.add_scalar('Loss/train', loss.mean().data.cpu().numpy(), global_step=step)
+            summary_writer.add_scalar('Distance/positive', pd.sum().data.cpu().numpy(), global_step=step)
+            summary_writer.add_scalar('Distance/negative', nd.sum().data.cpu().numpy(), global_step=step)
 
-        optimizer.step()
-        step += 1
+            loss = loss.data.cpu()
+            loss_impacting_samples_count += loss.nonzero().size()[0]
+            samples_count += loss.size()[0]
 
-    summary_writer.add_scalar('Metrics/loss_impacting_samples', loss_impacting_samples_count / samples_count * 100,
-                              global_step=epoch_id)
+            optimizer.step()
+            step += 1
 
-    if epoch_id % FLAGS.validation_freq == 0:
-        ddp_model.eval()
-        _, _, hits_at_10, _ = test(model=ddp_model, data_generator=validation_generator,
-                                   entities_count=len(entity2id),
-                                   device=device, summary_writer=summary_writer,
-                                   epoch_id=epoch_id, metric_suffix="val")
-        score = hits_at_10
-        if score > best_score:
-            best_score = score
-            storage.save_checkpoint(ddp_model, optimizer, epoch_id, step, best_score)
+        summary_writer.add_scalar('Metrics/loss_impacting_samples', loss_impacting_samples_count / samples_count * 100,
+                                  global_step=epoch_id)
 
-    # Testing the best checkpoint on test dataset
-    storage.load_checkpoint("checkpoint.tar", model, optimizer)
-    best_model = ddp_model.to(device)
-    best_model.eval()
-    scores = test(model=best_model, data_generator=test_generator, entities_count=len(entity2id), device=device,
-                  summary_writer=summary_writer, epoch_id=1, metric_suffix="test")
-    print("Test scores: ", scores)
-    # Use a barrier() to make sure that all processes have finished reading the
-    # checkpoint
-    dist.barrier()
+        if epoch_id % FLAGS.validation_freq == 0:
+            ddp_model.eval()
+            _, _, hits_at_10, _ = test(model=ddp_model, data_generator=validation_generator,
+                                       entities_count=len(entity2id),
+                                       device=device, summary_writer=summary_writer,
+                                       epoch_id=epoch_id, metric_suffix="val")
+            score = hits_at_10
+            if score > best_score:
+                best_score = score
+                storage.save_checkpoint(ddp_model, optimizer, epoch_id, step, best_score)
+
+        # Testing the best checkpoint on test dataset
+        storage.load_checkpoint("checkpoint.tar", model, optimizer)
+        best_model = ddp_model.to(device)
+        best_model.eval()
+        scores = test(model=best_model, data_generator=test_generator, entities_count=len(entity2id), device=device,
+                      summary_writer=summary_writer, epoch_id=1, metric_suffix="test")
+        print("Test scores: ", scores)
+        # Use a barrier() to make sure that all processes have finished reading the
+        # checkpoint
+        dist.barrier()
 
     if rank == 0:
         os.remove(CHECKPOINT_PATH)
